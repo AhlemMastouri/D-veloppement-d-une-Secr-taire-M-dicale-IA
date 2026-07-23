@@ -1,0 +1,117 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id               Int                  @id @default(autoincrement())
+  email            String               @unique
+  password         String
+  name             String
+  role             String               // 'DOCTOR', 'SECRETARY', 'ADMIN'
+  specialty        String?              // Optional specialty for doctors
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  availabilities   DoctorAvailability[]
+  appointments     Appointment[]
+  dictations       MedicalDictation[]
+}
+
+model Patient {
+  id                Int                @id @default(autoincrement())
+  firstName         String
+  lastName          String
+  dob               DateTime
+  phone             String             @unique
+  email             String?
+  insurance         String?            // 'Carte Vitale', 'Mutuelle', etc.
+  treatingPhysician String?
+  consentGdpr       Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  appointments      Appointment[]
+  callLogs          CallLog[]
+  notifications     Notification[]
+  dictations        MedicalDictation[]
+}
+
+model DoctorAvailability {
+  id           Int       @id @default(autoincrement())
+  doctorId     Int
+  doctor       User      @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  dayOfWeek    Int?      // 0 = Sunday, 1 = Monday, ..., 6 = Saturday (for weekly recurring availability)
+  startTime    String    // "HH:MM" (e.g. "09:00")
+  endTime      String    // "HH:MM" (e.g. "17:00")
+  specificDate DateTime? // Specific date for exceptions/one-off shifts (overrides dayOfWeek if set)
+  isAvailable  Boolean   @default(true) // Can be false to block out specific times (e.g. lunch break, leave)
+}
+
+model Appointment {
+  id            Int            @id @default(autoincrement())
+  patientId     Int
+  patient       Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctorId      Int
+  doctor        User           @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  startTime     DateTime
+  endTime       DateTime
+  status        String         // 'PENDING', 'CONFIRMED', 'CANCELLED', 'MOVED', 'URGENT'
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  notifications Notification[]
+}
+
+model CallLog {
+  id             Int       @id @default(autoincrement())
+  direction      String    // 'INBOUND', 'OUTBOUND'
+  phoneNumber    String
+  status         String    // 'COMPLETED', 'MISSED', 'IN_PROGRESS'
+  startTime      DateTime  @default(now())
+  endTime        DateTime?
+  duration       Int?      // in seconds
+  transcript     String?   // JSON or text representing conversation turns
+  summary        String?   // AI generated summary of the call
+  classification String?   // 'EMERGENCY', 'APPOINTMENT_BOOKING', 'APPOINTMENT_MODIFICATION', 'INFO_REQUEST', 'ADMINISTRATIVE'
+  language       String    @default("Français")
+  patientId      Int?
+  patient        Patient?  @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  createdAt      DateTime  @default(now())
+}
+
+model Faq {
+  id        Int      @id @default(autoincrement())
+  question  String
+  answer    String
+  category  String   // 'horaires', 'adresse', 'parking', 'tarifs', 'specialites', 'preparations'
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id             Int          @id @default(autoincrement())
+  appointmentId  Int?
+  appointment    Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  patientId      Int
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  type           String       // 'SMS', 'EMAIL', 'WHATSAPP'
+  status         String       // 'PENDING', 'SENT', 'FAILED'
+  messageContent String
+  sentAt         DateTime?
+  createdAt      DateTime     @default(now())
+}
+
+model MedicalDictation {
+  id            Int      @id @default(autoincrement())
+  doctorId      Int
+  doctor        User     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  patientId     Int
+  patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  rawTranscript String
+  summary       String?
+  notes         String?  // Clinical notes draft
+  exportPdfUrl  String?
+  createdAt     DateTime @default(now())
+}
