@@ -119,6 +119,33 @@ router.get('/me', authMiddleware_1.authenticateJWT, async (req, res) => {
         if (!req.user) {
             return res.status(401).json({ error: 'Non authentifié' });
         }
+        if (req.user.role === 'PATIENT') {
+            const patient = await db_1.default.patient.findUnique({
+                where: { id: req.user.id },
+                select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                    phone: true,
+                    insurance: true,
+                    createdAt: true,
+                },
+            });
+            if (!patient) {
+                return res.status(404).json({ error: 'Patient non trouvé' });
+            }
+            return res.json({
+                user: {
+                    id: patient.id,
+                    name: `${patient.firstName} ${patient.lastName}`,
+                    email: patient.email,
+                    phone: patient.phone,
+                    role: 'PATIENT',
+                    insurance: patient.insurance,
+                }
+            });
+        }
         const user = await db_1.default.user.findUnique({
             where: { id: req.user.id },
             select: {

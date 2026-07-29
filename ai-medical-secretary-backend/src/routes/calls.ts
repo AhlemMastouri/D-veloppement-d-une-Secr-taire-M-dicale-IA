@@ -102,6 +102,49 @@ router.get('/stats', authenticateJWT as any, requireRole(['ADMIN', 'SECRETARY', 
   }
 });
 
+// PATCH /api/v1/calls/:id (Admin, Secretary only)
+// Permet de corriger le résumé/la classification d'un appel (supervision humaine
+// des réponses de l'IA), et/ou de marquer une urgence comme traitée.
+router.patch('/:id', authenticateJWT as any, requireRole(['ADMIN', 'SECRETARY']) as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: 'Identifiant d\'appel invalide' });
+    }
+
+    const { summary, classification, emergencyHandled } = req.body;
+
+    const existing = await prisma.callLog.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Appel introuvable' });
+    }
+
+    const data: any = {};
+    if (summary !== undefined) data.summary = summary;
+    if (classification !== undefined) data.classification = classification;
+    if (emergencyHandled !== undefined) data.emergencyHandled = Boolean(emergencyHandled);
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ error: 'Aucun champ à mettre à jour' });
+    }
+
+    const updated = await prisma.callLog.update({
+      where: { id },
+      data,
+      include: {
+        patient: {
+          select: { firstName: true, lastName: true, phone: true },
+        },
+      },
+    });
+
+    return res.json({ message: 'Appel mis à jour avec succès', callLog: updated });
+  } catch (error: any) {
+    console.error('Erreur PATCH /calls/:id:', error);
+    return res.status(500).json({ error: 'Erreur interne du serveur' });
+  }
+});
+
 // POST /api/v1/calls (Can be logged by the telephony / AI connector system)
 router.post('/', async (req, res) => {
   try {

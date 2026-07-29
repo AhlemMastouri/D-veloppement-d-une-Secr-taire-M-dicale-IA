@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import cors from 'cors';
 import dotenv from 'dotenv';
 
@@ -13,6 +14,9 @@ import appointmentsRouter from './routes/appointments';
 import callsRouter from './routes/calls';
 import faqsRouter from './routes/faqs';
 import dictationsRouter from './routes/dictations';
+
+// WebSocket (appels en direct)
+import { attachCallsWebSocketServer } from './wsCallsServer';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -51,7 +55,13 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(500).json({ error: 'Une erreur interne est survenue sur le serveur' });
 });
 
-app.listen(PORT, () => {
+// On crée un serveur HTTP explicite (au lieu de app.listen directement)
+// pour pouvoir y attacher le serveur WebSocket sur le même port.
+const server = http.createServer(app);
+attachCallsWebSocketServer(server);
+
+server.listen(PORT, () => {
   console.log(`Serveur démarré avec succès sur le port ${PORT}`);
   console.log(`L'API est accessible sur http://localhost:${PORT}`);
+  console.log(`Le WebSocket des appels en direct est accessible sur ws://localhost:${PORT}/ws/calls`);
 });

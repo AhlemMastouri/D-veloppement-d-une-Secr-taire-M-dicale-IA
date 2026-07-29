@@ -22,7 +22,7 @@ export default function DashboardTab({ token }) {
   const fetchStats = async () => {
     setLoadingStats(true);
     try {
-      const res = await fetch('http://localhost:3000/api/v1/calls/stats', {
+      const res = await fetch('http://localhost:3001/api/v1/calls/stats', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -127,7 +127,7 @@ export default function DashboardTab({ token }) {
 
   const logCallToBackend = async (simData) => {
     try {
-      await fetch('http://localhost:3000/api/v1/calls', {
+      await fetch('http://localhost:3001/api/v1/calls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

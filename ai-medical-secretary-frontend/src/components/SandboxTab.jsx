@@ -22,7 +22,7 @@ export default function SandboxTab({ token }) {
     // Simulate scanning laser animation for 2 seconds
     setTimeout(async () => {
       try {
-        const res = await fetch('http://localhost:3000/api/v1/services/ocr/parse', {
+        const res = await fetch('http://localhost:3001/api/v1/services/ocr/parse', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ docType: ocrDocType }),
@@ -48,7 +48,7 @@ export default function SandboxTab({ token }) {
     // Simulate AI clinical generation for 2.5 seconds
     setTimeout(async () => {
       try {
-        const res = await fetch('http://localhost:3000/api/v1/services/dictations', {
+        const res = await fetch('http://localhost:3001/api/v1/services/dictations', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

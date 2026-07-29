@@ -5,31 +5,25 @@ import { authenticateJWT, requireRole, AuthenticatedRequest } from '../middlewar
 const router = Router();
 
 // GET /api/v1/appointments (Admin, Secretary, Doctor only)
-// Query filters: doctorId, patientId, status, startDate, endDate
-router.get('/', authenticateJWT as any, requireRole(['ADMIN', 'SECRETARY', 'DOCTOR']) as any, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/', authenticateJWT as any, requireRole(['ADMIN', 'SECRETARY', 'DOCTOR', 'PATIENT']) as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { doctorId, patientId, status, startDate, endDate } = req.query;
 
     const whereClause: any = {};
 
-    if (doctorId) {
-      whereClause.doctorId = parseInt(doctorId as string);
+    // If the caller is a patient, restrict to their own records
+    if (req.user?.role === 'PATIENT') {
+      whereClause.patientId = req.user.id;
+    } else {
+      if (doctorId) whereClause.doctorId = parseInt(doctorId as string);
+      if (patientId) whereClause.patientId = parseInt(patientId as string);
     }
-    if (patientId) {
-      whereClause.patientId = parseInt(patientId as string);
-    }
-    if (status) {
-      whereClause.status = status as string;
-    }
+    if (status) whereClause.status = status as string;
 
     if (startDate || endDate) {
       whereClause.startTime = {};
-      if (startDate) {
-        whereClause.startTime.gte = new Date(startDate as string);
-      }
-      if (endDate) {
-        whereClause.startTime.lte = new Date(endDate as string);
-      }
+      if (startDate) whereClause.startTime.gte = new Date(startDate as string);
+      if (endDate) whereClause.startTime.lte = new Date(endDate as string);
     }
 
     const appointments = await prisma.appointment.findMany({
@@ -48,8 +42,7 @@ router.get('/', authenticateJWT as any, requireRole(['ADMIN', 'SECRETARY', 'DOCT
   }
 });
 
-// POST /api/v1/appointments (Can be booked by anyone/AI secretary)
-// Payload: patientId, doctorId, startTime, duration (in minutes, defaults to 30), notes
+// POST /api/v1/appointments
 router.post('/', async (req, res) => {
   try {
     const { patientId, doctorId, startTime, duration = 30, notes } = req.body;
@@ -58,31 +51,36 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Le patientId, doctorId et startTime sont requis' });
     }
 
-    const start = new Date(startTime);
-    const end = new Date(start.getTime() + duration * 60 * 1000);
+    const patientIdNum = parseInt(patientId);
+    const doctorIdNum = parseInt(doctorId);
+    const durationNum = parseInt(duration);
 
-    // Verify patient and doctor exist
-    const patient = await prisma.patient.findUnique({ where: { id: parseInt(patientId) } });
+    if (isNaN(patientIdNum) || isNaN(doctorIdNum) || isNaN(durationNum)) {
+      return res.status(400).json({ error: 'patientId, doctorId et duration doivent être numériques' });
+    }
+
+    const start = new Date(startTime);
+    if (isNaN(start.getTime())) {
+      return res.status(400).json({ error: 'startTime invalide' });
+    }
+    const end = new Date(start.getTime() + durationNum * 60 * 1000);
+
+    const patient = await prisma.patient.findUnique({ where: { id: patientIdNum } });
     if (!patient) {
       return res.status(404).json({ error: 'Patient non trouvé' });
     }
 
-    const doctor = await prisma.user.findFirst({
-      where: { id: parseInt(doctorId), role: 'DOCTOR' },
-    });
+    const doctor = await prisma.user.findFirst({ where: { id: doctorIdNum, role: 'DOCTOR' } });
     if (!doctor) {
       return res.status(404).json({ error: 'Médecin non trouvé' });
     }
 
-    // Check for double booking / overlapping appointments for this doctor
+    // Vérification double-réservation
     const overlapping = await prisma.appointment.findFirst({
       where: {
-        doctorId: parseInt(doctorId),
+        doctorId: doctorIdNum,
         status: { in: ['CONFIRMED', 'PENDING'] },
-        AND: [
-          { startTime: { lt: end } },
-          { endTime: { gt: start } },
-        ],
+        AND: [{ startTime: { lt: end } }, { endTime: { gt: start } }],
       },
     });
 
@@ -97,31 +95,36 @@ router.post('/', async (req, res) => {
       });
     }
 
-    const appointment = await prisma.appointment.create({
-      data: {
-        patientId: parseInt(patientId),
-        doctorId: parseInt(doctorId),
-        startTime: start,
-        endTime: end,
-        status: 'CONFIRMED', // Default to confirmed. Can change to PENDING if approval required.
-        notes,
-      },
-      include: {
-        doctor: { select: { name: true } },
-        patient: { select: { firstName: true, lastName: true, phone: true } },
-      },
-    });
+    // Transaction: RDV + notification sont stockés ensemble, ou aucun des deux
+    // (évite les enregistrements orphelins si la notification échoue)
+    const appointment = await prisma.$transaction(async (tx) => {
+      const created = await tx.appointment.create({
+        data: {
+          patientId: patientIdNum,
+          doctorId: doctorIdNum,
+          startTime: start,
+          endTime: end,
+          status: 'CONFIRMED',
+          notes,
+        },
+        include: {
+          doctor: { select: { name: true } },
+          patient: { select: { firstName: true, lastName: true, phone: true } },
+        },
+      });
 
-    // Create automatic confirmation notification
-    await prisma.notification.create({
-      data: {
-        appointmentId: appointment.id,
-        patientId: appointment.patientId,
-        type: 'SMS',
-        status: 'SENT',
-        messageContent: `Confirmation: Votre RDV avec ${appointment.doctor.name} est confirmé pour le ${start.toLocaleString('fr-FR')}.`,
-        sentAt: new Date(),
-      },
+      await tx.notification.create({
+        data: {
+          appointmentId: created.id,
+          patientId: created.patientId,
+          type: 'SMS',
+          status: 'SENT',
+          messageContent: `Confirmation: Votre RDV avec ${created.doctor.name} est confirmé pour le ${start.toLocaleString('fr-FR')}.`,
+          sentAt: new Date(),
+        },
+      });
+
+      return created;
     });
 
     return res.status(201).json({ message: 'Rendez-vous réservé avec succès', appointment });
@@ -131,7 +134,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /api/v1/appointments/:id (Modify appointment - status, time, notes)
+// PATCH /api/v1/appointments/:id
 router.patch('/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -140,6 +143,10 @@ router.patch('/:id', async (req, res) => {
     }
 
     const { startTime, duration = 30, status, notes } = req.body;
+    const durationNum = parseInt(duration);
+    if (isNaN(durationNum)) {
+      return res.status(400).json({ error: 'duration invalide' });
+    }
 
     const appointmentExists = await prisma.appointment.findUnique({
       where: { id },
@@ -155,18 +162,17 @@ router.patch('/:id', async (req, res) => {
 
     if (startTime) {
       start = new Date(startTime);
-      end = new Date(start.getTime() + duration * 60 * 1000);
+      if (isNaN(start.getTime())) {
+        return res.status(400).json({ error: 'startTime invalide' });
+      }
+      end = new Date(start.getTime() + durationNum * 60 * 1000);
 
-      // Check for overlapping appointments, excluding the current appointment itself
       const overlapping = await prisma.appointment.findFirst({
         where: {
           id: { not: id },
           doctorId: appointmentExists.doctorId,
           status: { in: ['CONFIRMED', 'PENDING'] },
-          AND: [
-            { startTime: { lt: end } },
-            { endTime: { gt: start } },
-          ],
+          AND: [{ startTime: { lt: end } }, { endTime: { gt: start } }],
         },
       });
 
@@ -175,40 +181,43 @@ router.patch('/:id', async (req, res) => {
       }
     }
 
-    const updatedAppointment = await prisma.appointment.update({
-      where: { id },
-      data: {
-        startTime: startTime ? start : undefined,
-        endTime: startTime ? end : undefined,
-        status: status !== undefined ? status : undefined,
-        notes: notes !== undefined ? notes : undefined,
-      },
-    });
+    const updatedAppointment = await prisma.$transaction(async (tx) => {
+      const updated = await tx.appointment.update({
+        where: { id },
+        data: {
+          startTime: startTime ? start : undefined,
+          endTime: startTime ? end : undefined,
+          status: status !== undefined ? status : undefined,
+          notes: notes !== undefined ? notes : undefined,
+        },
+      });
 
-    // Create notification for modification/cancellation
-    if (status === 'CANCELLED') {
-      await prisma.notification.create({
-        data: {
-          appointmentId: id,
-          patientId: appointmentExists.patientId,
-          type: 'SMS',
-          status: 'SENT',
-          messageContent: `Annulation: Votre RDV avec ${appointmentExists.doctor.name} le ${appointmentExists.startTime.toLocaleString('fr-FR')} a été annulé.`,
-          sentAt: new Date(),
-        },
-      });
-    } else if (startTime) {
-      await prisma.notification.create({
-        data: {
-          appointmentId: id,
-          patientId: appointmentExists.patientId,
-          type: 'SMS',
-          status: 'SENT',
-          messageContent: `Modification: Votre RDV avec ${appointmentExists.doctor.name} a été déplacé au ${start.toLocaleString('fr-FR')}.`,
-          sentAt: new Date(),
-        },
-      });
-    }
+      if (status === 'CANCELLED') {
+        await tx.notification.create({
+          data: {
+            appointmentId: id,
+            patientId: appointmentExists.patientId,
+            type: 'SMS',
+            status: 'SENT',
+            messageContent: `Annulation: Votre RDV avec ${appointmentExists.doctor.name} le ${appointmentExists.startTime.toLocaleString('fr-FR')} a été annulé.`,
+            sentAt: new Date(),
+          },
+        });
+      } else if (startTime) {
+        await tx.notification.create({
+          data: {
+            appointmentId: id,
+            patientId: appointmentExists.patientId,
+            type: 'SMS',
+            status: 'SENT',
+            messageContent: `Modification: Votre RDV avec ${appointmentExists.doctor.name} a été déplacé au ${start.toLocaleString('fr-FR')}.`,
+            sentAt: new Date(),
+          },
+        });
+      }
+
+      return updated;
+    });
 
     return res.json({ message: 'Rendez-vous mis à jour avec succès', appointment: updatedAppointment });
   } catch (error: any) {
@@ -217,7 +226,7 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-// POST /api/v1/appointments/:id/confirm (Manually confirm pending appointment)
+// POST /api/v1/appointments/:id/confirm
 router.post('/:id/confirm', authenticateJWT as any, requireRole(['ADMIN', 'SECRETARY', 'DOCTOR']) as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const id = parseInt(req.params.id);
@@ -234,25 +243,76 @@ router.post('/:id/confirm', authenticateJWT as any, requireRole(['ADMIN', 'SECRE
       return res.status(404).json({ error: 'Rendez-vous non trouvé' });
     }
 
-    const updated = await prisma.appointment.update({
-      where: { id },
-      data: { status: 'CONFIRMED' },
-    });
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.appointment.update({ where: { id }, data: { status: 'CONFIRMED' } });
 
-    await prisma.notification.create({
-      data: {
-        appointmentId: id,
-        patientId: appointment.patientId,
-        type: 'SMS',
-        status: 'SENT',
-        messageContent: `Validation: Votre RDV en attente avec ${appointment.doctor.name} le ${appointment.startTime.toLocaleString('fr-FR')} est validé.`,
-        sentAt: new Date(),
-      },
+      await tx.notification.create({
+        data: {
+          appointmentId: id,
+          patientId: appointment.patientId,
+          type: 'SMS',
+          status: 'SENT',
+          messageContent: `Validation: Votre RDV en attente avec ${appointment.doctor.name} le ${appointment.startTime.toLocaleString('fr-FR')} est validé.`,
+          sentAt: new Date(),
+        },
+      });
+
+      return u;
     });
 
     return res.json({ message: 'Rendez-vous validé avec succès', appointment: updated });
   } catch (error: any) {
     console.error('Erreur POST /appointments/:id/confirm:', error);
+    return res.status(500).json({ error: 'Erreur interne du serveur' });
+  }
+});
+
+// POST /api/v1/appointments/:id/cancel
+router.post('/:id/cancel', authenticateJWT as any, requireRole(['ADMIN', 'SECRETARY', 'DOCTOR', 'PATIENT']) as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: 'ID de rendez-vous invalide' });
+    }
+
+    const appointment = await prisma.appointment.findUnique({
+      where: { id },
+      include: { doctor: { select: { name: true } } },
+    });
+
+    if (!appointment) {
+      return res.status(404).json({ error: 'Rendez-vous non trouvé' });
+    }
+
+    // Patients can only cancel their own appointments
+    if (req.user?.role === 'PATIENT' && appointment.patientId !== req.user.id) {
+      return res.status(403).json({ error: 'Accès interdit: vous ne pouvez annuler que vos propres rendez-vous' });
+    }
+
+    if (appointment.status === 'CANCELLED') {
+      return res.status(409).json({ error: 'Ce rendez-vous est déjà annulé' });
+    }
+
+    const updated = await prisma.$transaction(async (tx: any) => {
+      const u = await tx.appointment.update({ where: { id }, data: { status: 'CANCELLED' } });
+
+      await tx.notification.create({
+        data: {
+          appointmentId: id,
+          patientId: appointment.patientId,
+          type: 'SMS',
+          status: 'SENT',
+          messageContent: `Annulation: Votre RDV avec ${appointment.doctor.name} le ${appointment.startTime.toLocaleString('fr-FR')} a été annulé.`,
+          sentAt: new Date(),
+        },
+      });
+
+      return u;
+    });
+
+    return res.json({ message: 'Rendez-vous annulé avec succès', appointment: updated });
+  } catch (error: any) {
+    console.error('Erreur POST /appointments/:id/cancel:', error);
     return res.status(500).json({ error: 'Erreur interne du serveur' });
   }
 });

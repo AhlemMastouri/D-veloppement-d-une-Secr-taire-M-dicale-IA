@@ -21,8 +21,8 @@ export default function FAQTab({ token }) {
   const fetchFaqs = async () => {
     try {
       const url = categoryFilter !== 'tous' 
-        ? `http://localhost:3000/api/v1/faqs?category=${categoryFilter}` 
-        : 'http://localhost:3000/api/v1/faqs';
+        ? `http://localhost:3001/api/v1/faqs?category=${categoryFilter}` 
+        : 'http://localhost:3001/api/v1/faqs';
       
       const res = await fetch(url);
       if (res.ok) {
@@ -43,7 +43,7 @@ export default function FAQTab({ token }) {
     if (!newQuestion || !newAnswer) return;
 
     try {
-      const res = await fetch('http://localhost:3000/api/v1/faqs', {
+      const res = await fetch('http://localhost:3001/api/v1/faqs', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

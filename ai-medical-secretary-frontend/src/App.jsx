@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Activity, LayoutDashboard, Calendar, Users, Settings, Cpu, LogOut, User } from 'lucide-react';
 import Login from './components/Login';
 import DashboardTab from './components/DashboardTab';
+import DoctorDashboard from './components/DoctorDashboard';
+import SecretaryDashboard from './components/SecretaryDashboard';
+import AdminDashboard from './components/AdminDashboard';
 import CalendarTab from './components/CalendarTab';
 import PatientsTab from './components/PatientsTab';
 import FAQTab from './components/FAQTab';
@@ -35,6 +38,20 @@ export default function App() {
   if (!token || !user) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
+
+  // Sélectionne le composant de tableau de bord approprié selon le rôle
+  const renderDashboard = () => {
+    if (user?.role === 'DOCTOR') {
+      return <DoctorDashboard token={token} />;
+    }
+    if (user?.role === 'SECRETARY') {
+      return <SecretaryDashboard token={token} />;
+    }
+    if (user?.role === 'ADMIN') {
+      return <AdminDashboard token={token} />;
+    }
+    return <DashboardTab token={token} />;
+  };
 
   return (
     <div className="app-container">
@@ -111,53 +128,59 @@ export default function App() {
             onClick={() => setActiveTab('calendar')}
           >
             <Calendar size={18} />
-            Agenda médical
+            {user?.role === 'PATIENT' ? 'Mes rendez-vous' : 'Agenda médical'}
           </button>
 
-          <button 
-            className="btn btn-outline" 
-            style={{
-              justifyContent: 'flex-start',
-              width: '100%',
-              border: 'none',
-              background: activeTab === 'patients' ? 'rgba(14, 165, 233, 0.1)' : 'transparent',
-              color: activeTab === 'patients' ? 'var(--primary)' : 'var(--text-secondary)',
-            }}
-            onClick={() => setActiveTab('patients')}
-          >
-            <Users size={18} />
-            Dossiers patients
-          </button>
+          {(user?.role === 'SECRETARY' || user?.role === 'ADMIN') && (
+            <button 
+              className="btn btn-outline" 
+              style={{
+                justifyContent: 'flex-start',
+                width: '100%',
+                border: 'none',
+                background: activeTab === 'patients' ? 'rgba(14, 165, 233, 0.1)' : 'transparent',
+                color: activeTab === 'patients' ? 'var(--primary)' : 'var(--text-secondary)',
+              }}
+              onClick={() => setActiveTab('patients')}
+            >
+              <Users size={18} />
+              Dossiers patients
+            </button>
+          )}
 
-          <button 
-            className="btn btn-outline" 
-            style={{
-              justifyContent: 'flex-start',
-              width: '100%',
-              border: 'none',
-              background: activeTab === 'faq' ? 'rgba(14, 165, 233, 0.1)' : 'transparent',
-              color: activeTab === 'faq' ? 'var(--primary)' : 'var(--text-secondary)',
-            }}
-            onClick={() => setActiveTab('faq')}
-          >
-            <Settings size={18} />
-            Paramétrage IA
-          </button>
+          {user?.role !== 'PATIENT' && (
+            <button 
+              className="btn btn-outline" 
+              style={{
+                justifyContent: 'flex-start',
+                width: '100%',
+                border: 'none',
+                background: activeTab === 'faq' ? 'rgba(14, 165, 233, 0.1)' : 'transparent',
+                color: activeTab === 'faq' ? 'var(--primary)' : 'var(--text-secondary)',
+              }}
+              onClick={() => setActiveTab('faq')}
+            >
+              <Settings size={18} />
+              Paramétrage IA
+            </button>
+          )}
 
-          <button 
-            className="btn btn-outline" 
-            style={{
-              justifyContent: 'flex-start',
-              width: '100%',
-              border: 'none',
-              background: activeTab === 'sandbox' ? 'rgba(14, 165, 233, 0.1)' : 'transparent',
-              color: activeTab === 'sandbox' ? 'var(--primary)' : 'var(--text-secondary)',
-            }}
-            onClick={() => setActiveTab('sandbox')}
-          >
-            <Cpu size={18} />
-            Sandbox IA
-          </button>
+          {user?.role !== 'PATIENT' && (
+            <button 
+              className="btn btn-outline" 
+              style={{
+                justifyContent: 'flex-start',
+                width: '100%',
+                border: 'none',
+                background: activeTab === 'sandbox' ? 'rgba(14, 165, 233, 0.1)' : 'transparent',
+                color: activeTab === 'sandbox' ? 'var(--primary)' : 'var(--text-secondary)',
+              }}
+              onClick={() => setActiveTab('sandbox')}
+            >
+              <Cpu size={18} />
+              Sandbox IA
+            </button>
+          )}
         </nav>
 
         {/* Logout button at bottom */}
@@ -174,9 +197,9 @@ export default function App() {
 
       {/* Main active dashboard page view */}
       <main className="main-content">
-        {activeTab === 'dashboard' && <DashboardTab token={token} />}
+        {activeTab === 'dashboard' && renderDashboard()}
         {activeTab === 'calendar' && <CalendarTab token={token} />}
-        {activeTab === 'patients' && <PatientsTab token={token} />}
+        {activeTab === 'patients' && (user?.role === 'SECRETARY' || user?.role === 'ADMIN') && <PatientsTab token={token} />}
         {activeTab === 'faq' && <FAQTab token={token} />}
         {activeTab === 'sandbox' && <SandboxTab token={token} />}
       </main>
