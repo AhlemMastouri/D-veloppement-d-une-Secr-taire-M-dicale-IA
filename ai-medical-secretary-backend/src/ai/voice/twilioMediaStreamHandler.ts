@@ -1,13 +1,23 @@
 // src/ai/voice/twilioMediaStreamHandler.ts
 //
 // Nécessite : npm install ws
-// Serveur WebSocket branché sur ton serveur HTTP existant (voir exemple de câblage en bas).
+// À monter sur une route SÉPARÉE de wsCallsServer.ts (ex: /voice/media-stream),
+// car Twilio ne peut pas s'authentifier par JWT comme le dashboard de supervision.
+// Voir en bas de ce fichier comment l'attacher dans server.ts, à côté de
+// attachCallsWebSocketServer.
 
 import { WebSocket } from "ws";
+import prisma from "../../config/db";
 import { createStreamingRecognition } from "./sttService";
 import { synthesizeSpeech, encodeAudioForTwilio } from "./ttsService";
 import { detectLanguage, resolveLanguageSwitch } from "./languageDetector";
+import { registerCall, unregisterCall, isTakenOver } from "./liveCallRegistry";
 import { SupportedLanguage, VoiceCallState } from "../types/call.types";
+import {
+  notifyCallStarted,
+  notifyCallTranscript,
+  notifyCallEnded,
+} from "../../wsCallsServer";
 
 // Remplace ceci par ton vrai pipeline (dialogueManager) une fois branché
 async function generateReply(
@@ -27,13 +37,9 @@ interface StreamSession {
 }
 
 /**
- * Gère une connexion WebSocket Twilio Media Stream de bout en bout :
- * - reçoit les événements "start" / "media" / "stop" de Twilio
- * - transcrit l'audio en continu
- * - détecte/adapte la langue
- * - gère l'interruption naturelle (barge-in) : si le patient parle
- *   pendant que le bot répond, on coupe la voix du bot
- * - renvoie la réponse audio (TTS) dans le flux
+ * Gère une connexion WebSocket Twilio Media Stream de bout en bout.
+ * `callerPhone` est passé en paramètre personnalisé Twilio (voir twilioWebhook.ts)
+ * pour pouvoir relier l'appel à un patient existant dès le départ.
  */
 export function handleTwilioMediaStream(ws: WebSocket) {
   let session: StreamSession | null = null;
@@ -44,14 +50,22 @@ export function handleTwilioMediaStream(ws: WebSocket) {
     switch (msg.event) {
       case "start": {
         const callId = msg.start.callSid;
-        const initialLanguage = SupportedLanguage.FRENCH; // langue par défaut au décroché
+        const callerPhone: string | undefined =
+          msg.start.customParameters?.callerPhone;
+        const initialLanguage = SupportedLanguage.FRENCH;
+
+        // Tentative de résolution du patient par numéro de téléphone,
+        // pour afficher son nom dans le dashboard de supervision.
+        const patient = callerPhone
+          ? await prisma.patient.findUnique({ where: { phone: callerPhone } })
+          : null;
 
         session = {
           callId,
           isBotSpeaking: false,
           state: {
             callId,
-            currentIntent: undefined as any, // sera défini par le pipeline NLU
+            currentIntent: undefined as any,
             collectedEntities: {},
             missingFields: [],
             turnCount: 0,
@@ -65,6 +79,24 @@ export function handleTwilioMediaStream(ws: WebSocket) {
             onTranscript(ws, session!, transcript, isFinal)
           ),
         };
+
+        // Notifie le dashboard de supervision qu'un appel démarre
+        notifyCallStarted(callId, {
+          firstName: patient?.firstName,
+          lastName: patient?.lastName,
+          phone: callerPhone,
+        });
+
+        // Enregistre cet appel pour permettre la reprise en direct par une secrétaire
+        registerCall({
+          callId,
+          language: initialLanguage,
+          isTakenOver: false,
+          sendAgentReply: async (text: string) => {
+            await speakToPatient(ws, session!, text);
+            notifyCallTranscript(callId, "AGENT", text);
+          },
+        });
         break;
       }
 
@@ -72,15 +104,9 @@ export function handleTwilioMediaStream(ws: WebSocket) {
         if (!session) return;
         const audioChunk = Buffer.from(msg.media.payload, "base64");
 
-        // Interruption naturelle : si le patient parle pendant que le bot
-        // parle encore, on coupe immédiatement l'audio du bot côté Twilio.
+        // Interruption naturelle : coupe l'audio du bot si le patient parle par-dessus
         if (session.isBotSpeaking) {
-          ws.send(
-            JSON.stringify({
-              event: "clear",
-              streamSid: msg.streamSid,
-            })
-          );
+          ws.send(JSON.stringify({ event: "clear", streamSid: msg.streamSid }));
           session.isBotSpeaking = false;
         }
 
@@ -89,7 +115,11 @@ export function handleTwilioMediaStream(ws: WebSocket) {
       }
 
       case "stop": {
-        session?.stt.end();
+        if (session) {
+          notifyCallEnded(session.callId);
+          unregisterCall(session.callId);
+          session.stt.end();
+        }
         session = null;
         break;
       }
@@ -97,14 +127,18 @@ export function handleTwilioMediaStream(ws: WebSocket) {
   });
 
   ws.on("close", () => {
-    session?.stt.end();
+    if (session) {
+      notifyCallEnded(session.callId);
+      unregisterCall(session.callId);
+      session.stt.end();
+    }
   });
 }
 
 /**
- * Appelé à chaque transcript (partiel ou final) reçu du STT.
- * On ne déclenche le pipeline complet que sur les transcripts finaux,
- * pour éviter de traiter une phrase incomplète.
+ * Appelé à chaque transcript final reçu du STT.
+ * Si l'appel a été repris par une secrétaire (isTakenOver), l'IA ne répond
+ * plus automatiquement — elle continue juste à transcrire pour le dashboard.
  */
 async function onTranscript(
   ws: WebSocket,
@@ -112,15 +146,16 @@ async function onTranscript(
   transcript: string,
   isFinal: boolean
 ) {
-  if (!isFinal) return; // les résultats partiels ne servent qu'à détecter l'interruption
+  if (!isFinal) return;
 
   session.state.history.push({
     role: "patient",
     message: transcript,
     timestamp: new Date().toISOString(),
   });
+  notifyCallTranscript(session.callId, "PATIENT", transcript);
 
-  // 1. Détection de langue et résolution du changement éventuel
+  // Détection/résolution de la langue
   const detection = await detectLanguage(transcript);
   const { language, shouldLock } = resolveLanguageSwitch(
     session.state.language,
@@ -130,6 +165,11 @@ async function onTranscript(
   session.state.language = language;
   session.state.languageLocked = shouldLock;
 
+  // Si une secrétaire a repris l'appel, l'IA se tait et laisse la main
+  if (isTakenOver(session.callId)) {
+    return;
+  }
+
   // 2. Génération de la réponse (à remplacer par le pipeline NLU complet)
   const replyText = await generateReply(transcript, language);
 
@@ -138,9 +178,22 @@ async function onTranscript(
     message: replyText,
     timestamp: new Date().toISOString(),
   });
+  notifyCallTranscript(session.callId, "AI", replyText);
 
-  // 3. Synthèse vocale dans la bonne langue et envoi à Twilio
-  const audioBuffer = await synthesizeSpeech(replyText, language);
+  await speakToPatient(ws, session, replyText);
+}
+
+/**
+ * Synthétise un texte en audio et l'envoie dans le flux Twilio de la session donnée.
+ * Utilisé à la fois par la réponse automatique de l'IA et par les messages
+ * tapés en direct par une secrétaire (via liveCallRegistry.sendAgentReply).
+ */
+async function speakToPatient(
+  ws: WebSocket,
+  session: StreamSession,
+  text: string
+) {
+  const audioBuffer = await synthesizeSpeech(text, session.state.language);
   session.isBotSpeaking = true;
 
   ws.send(
@@ -152,16 +205,23 @@ async function onTranscript(
 }
 
 /*
---- Câblage dans ton serveur Express existant (server.ts) ---
+--- Câblage dans ton server.ts, à côté de attachCallsWebSocketServer(server) ---
 
-import http from "http";
 import { WebSocketServer } from "ws";
 import { handleTwilioMediaStream } from "./ai/voice/twilioMediaStreamHandler";
 
-const server = http.createServer(app); // ton app Express existante
-const wss = new WebSocketServer({ server, path: "/voice/media-stream" });
+const twilioWss = new WebSocketServer({ noServer: true });
 
-wss.on("connection", handleTwilioMediaStream);
+server.on("upgrade", (req, socket, head) => {
+  if (req.url === "/voice/media-stream") {
+    twilioWss.handleUpgrade(req, socket, head, (ws) => {
+      twilioWss.emit("connection", ws);
+    });
+  }
+  // NB: ne pas faire de `return` bloquant ici si wsCallsServer.ts a aussi
+  // son propre listener "upgrade" sur /ws/calls — les deux listeners
+  // s'exécutent l'un après l'autre, chacun vérifie son propre pathname.
+});
 
-server.listen(process.env.PORT || 3000);
+twilioWss.on("connection", handleTwilioMediaStream);
 */

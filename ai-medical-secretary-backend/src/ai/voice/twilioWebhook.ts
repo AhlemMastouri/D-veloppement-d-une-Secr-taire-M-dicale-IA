@@ -15,13 +15,16 @@ const VoiceResponse = twilio.twiml.VoiceResponse;
  */
 export function handleIncomingCall(req: Request, res: Response) {
   const response = new VoiceResponse();
+  const callerPhone = req.body.From ?? "";
 
   const connect = response.connect();
-  connect.stream({
+  const stream = connect.stream({
     // WSS_URL doit pointer vers ton serveur WebSocket (voir twilioMediaStreamHandler.ts)
     // ex: wss://ton-domaine.com/voice/media-stream
     url: process.env.TWILIO_MEDIA_STREAM_URL ?? "",
   });
+  // Transmis dans l'événement "start" du Media Stream (msg.start.customParameters.callerPhone)
+  stream.parameter({ name: "callerPhone", value: callerPhone });
 
   res.type("text/xml");
   res.send(response.toString());

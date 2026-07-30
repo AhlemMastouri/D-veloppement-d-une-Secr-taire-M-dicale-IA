@@ -72,20 +72,21 @@ model Appointment {
 }
 
 model CallLog {
-  id             Int       @id @default(autoincrement())
-  direction      String    // 'INBOUND', 'OUTBOUND'
-  phoneNumber    String
-  status         String    // 'COMPLETED', 'MISSED', 'IN_PROGRESS'
-  startTime      DateTime  @default(now())
-  endTime        DateTime?
-  duration       Int?      // in seconds
-  transcript     String?   @db.Text // JSON or text representing conversation turns
-  summary        String?   @db.Text // AI generated summary of the call
-  classification String?   // 'EMERGENCY', 'APPOINTMENT_BOOKING', 'APPOINTMENT_MODIFICATION', 'INFO_REQUEST', 'ADMINISTRATIVE'
-  language       String    @default("Français")
-  patientId      Int?
-  patient        Patient?  @relation(fields: [patientId], references: [id], onDelete: SetNull)
-  createdAt      DateTime  @default(now())
+  id               Int       @id @default(autoincrement())
+  direction        String    // 'INBOUND', 'OUTBOUND'
+  phoneNumber      String
+  status           String    // 'COMPLETED', 'MISSED', 'IN_PROGRESS'
+  startTime        DateTime  @default(now())
+  endTime          DateTime?
+  duration         Int?      // in seconds
+  transcript       String?   @db.Text // JSON or text representing conversation turns
+  summary          String?   @db.Text // AI generated summary of the call
+  classification   String?   // 'EMERGENCY', 'APPOINTMENT_BOOKING', 'APPOINTMENT_MODIFICATION', 'INFO_REQUEST', 'ADMINISTRATIVE'
+  emergencyHandled Boolean   @default(false) // Pour les urgences : indique si une secrétaire/médecin a traité l'urgence
+  language         String    @default("Français")
+  patientId        Int?
+  patient          Patient?  @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  createdAt        DateTime  @default(now())
 
   @@index([patientId])
 }
