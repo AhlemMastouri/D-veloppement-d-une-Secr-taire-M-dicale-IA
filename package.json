@@ -1,6 +1,14 @@
 {
   "dependencies": {
+    "@paypal/checkout-server-sdk": "^1.0.3",
+    "@stripe/react-stripe-js": "^6.8.0",
+    "@stripe/stripe-js": "^9.13.0",
     "mysql2": "^3.23.1",
+    "pdfkit": "^0.19.1",
+    "stripe": "^22.4.0",
     "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "@types/pdfkit": "^0.17.6"
   }
 }

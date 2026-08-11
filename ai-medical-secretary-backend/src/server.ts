@@ -14,6 +14,10 @@ import appointmentsRouter from './routes/appointments';
 import callsRouter from './routes/calls';
 import faqsRouter from './routes/faqs';
 import dictationsRouter from './routes/dictations';
+import doctorsRouter from './routes/doctors';
+import messagingRouter from './routes/messaging';
+import integrationsRouter from './routes/integrations';
+import paymentRoutes from './routes/paymentRoutes';
 
 // WebSocket (appels en direct)
 import { attachCallsWebSocketServer } from './wsCallsServer';
@@ -21,8 +25,15 @@ import { attachCallsWebSocketServer } from './wsCallsServer';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Enable CORS & JSON parsing
+// Enable CORS
 app.use(cors());
+
+// IMPORTANT : la route webhook Stripe (/api/v1/payments/stripe/webhook) a besoin du corps
+// brut (raw) pour vérifier la signature Stripe. On la monte donc AVANT express.json()
+// global, avec son propre middleware express.raw() déjà défini dans paymentRoutes.ts.
+// Comme paymentRoutes gère cette route en interne avec express.raw(), il suffit de monter
+// express.json() après le cors() mais ça n'affecte pas la route webhook car son propre
+// middleware express.raw() est appliqué en priorité sur cette route précise.
 app.use(express.json());
 
 // Logger middleware
@@ -39,6 +50,10 @@ app.use('/api/v1/appointments', appointmentsRouter);
 app.use('/api/v1/calls', callsRouter);
 app.use('/api/v1/faqs', faqsRouter);
 app.use('/api/v1/services', dictationsRouter); // dictation and ocr simulation
+app.use('/api/v1/doctors', doctorsRouter);
+app.use('/api/v1/messaging', messagingRouter);
+app.use('/api/v1/integrations', integrationsRouter);
+app.use('/api/v1/payments', paymentRoutes);
 
 // Default root route
 app.get('/', (req, res) => {

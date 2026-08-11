@@ -15,11 +15,13 @@
     "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
+    "@paypal/checkout-server-sdk": "^1.0.3",
     "@prisma/client": "^5.10.2",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.18.3",
+    "groq-sdk": "^1.5.0",
     "jsonwebtoken": "^9.0.2",
     "twilio": "^6.0.2",
     "ws": "^8.21.1",

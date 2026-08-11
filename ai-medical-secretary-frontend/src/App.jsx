@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, LayoutDashboard, Calendar, Users, Settings, Cpu, LogOut, User } from 'lucide-react';
+import { Activity, LayoutDashboard, Calendar, Users, Settings, Cpu, LogOut, User, Mic } from 'lucide-react';
 import Login from './components/Login';
 import DashboardTab from './components/DashboardTab';
 import DoctorDashboard from './components/DoctorDashboard';
@@ -9,6 +9,8 @@ import CalendarTab from './components/CalendarTab';
 import PatientsTab from './components/PatientsTab';
 import FAQTab from './components/FAQTab';
 import SandboxTab from './components/SandboxTab';
+import VoiceAssistantTab from './components/VoiceAssistantTab';
+import IntegrationsTab from './components/IntegrationsTab';
 
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
@@ -181,6 +183,40 @@ export default function App() {
               Sandbox IA
             </button>
           )}
+
+          {/* Voice Assistant — available to all roles */}
+          <button 
+            className="btn btn-outline" 
+            style={{
+              justifyContent: 'flex-start',
+              width: '100%',
+              border: 'none',
+              background: activeTab === 'voice' ? 'rgba(14, 165, 233, 0.1)' : 'transparent',
+              color: activeTab === 'voice' ? 'var(--primary)' : 'var(--text-secondary)',
+            }}
+            onClick={() => setActiveTab('voice')}
+          >
+            <Mic size={18} />
+            Assistant Vocal IA
+          </button>
+
+          {/* Integrations & Security — available to staff */}
+          {user?.role !== 'PATIENT' && (
+            <button 
+              className="btn btn-outline" 
+              style={{
+                justifyContent: 'flex-start',
+                width: '100%',
+                border: 'none',
+                background: activeTab === 'integrations' ? 'rgba(14, 165, 233, 0.1)' : 'transparent',
+                color: activeTab === 'integrations' ? 'var(--primary)' : 'var(--text-secondary)',
+              }}
+              onClick={() => setActiveTab('integrations')}
+            >
+              <Activity size={18} />
+              Intégrations & Sécurité
+            </button>
+          )}
         </nav>
 
         {/* Logout button at bottom */}
@@ -202,6 +238,8 @@ export default function App() {
         {activeTab === 'patients' && (user?.role === 'SECRETARY' || user?.role === 'ADMIN') && <PatientsTab token={token} />}
         {activeTab === 'faq' && <FAQTab token={token} />}
         {activeTab === 'sandbox' && <SandboxTab token={token} />}
+        {activeTab === 'voice' && <VoiceAssistantTab token={token} />}
+        {activeTab === 'integrations' && <IntegrationsTab token={token} />}
       </main>
 
     </div>

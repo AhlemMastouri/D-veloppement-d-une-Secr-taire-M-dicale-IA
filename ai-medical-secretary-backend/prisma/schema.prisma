@@ -8,17 +8,17 @@ generator client {
 }
 
 model User {
-  id               Int                  @id @default(autoincrement())
-  email            String               @unique
-  password         String
-  name             String
-  role             String               // 'DOCTOR', 'SECRETARY', 'ADMIN'
-  specialty        String?              // Optional specialty for doctors
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  availabilities   DoctorAvailability[]
-  appointments     Appointment[]
-  dictations       MedicalDictation[]
+  id             Int                  @id @default(autoincrement())
+  email          String               @unique
+  password       String
+  name           String
+  role           String // 'DOCTOR', 'SECRETARY', 'ADMIN'
+  specialty      String? // Optional specialty for doctors
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  availabilities DoctorAvailability[]
+  appointments   Appointment[]
+  dictations     MedicalDictation[]
 }
 
 model Patient {
@@ -28,8 +28,8 @@ model Patient {
   dob               DateTime
   phone             String             @unique
   email             String?
-  password          String?            // Optionnel : certains patients peuvent être créés par le secrétariat sans compte web
-  insurance         String?            // 'Carte Vitale', 'Mutuelle', etc.
+  password          String? // Optionnel : certains patients peuvent être créés par le secrétariat sans compte web
+  insurance         String? // 'Carte Vitale', 'Mutuelle', etc.
   treatingPhysician String?
   consentGdpr       Boolean            @default(false)
   createdAt         DateTime           @default(now())
@@ -38,15 +38,17 @@ model Patient {
   callLogs          CallLog[]
   notifications     Notification[]
   dictations        MedicalDictation[]
+  messages          Message[]
+  Payment           Payment[]
 }
 
 model DoctorAvailability {
   id           Int       @id @default(autoincrement())
   doctorId     Int
   doctor       User      @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-  dayOfWeek    Int?      // 0 = Sunday, 1 = Monday, ..., 6 = Saturday (for weekly recurring availability)
-  startTime    String    // "HH:MM" (e.g. "09:00")
-  endTime      String    // "HH:MM" (e.g. "17:00")
+  dayOfWeek    Int? // 0 = Sunday, 1 = Monday, ..., 6 = Saturday (for weekly recurring availability)
+  startTime    String // "HH:MM" (e.g. "09:00")
+  endTime      String // "HH:MM" (e.g. "17:00")
   specificDate DateTime? // Specific date for exceptions/one-off shifts (overrides dayOfWeek if set)
   isAvailable  Boolean   @default(true) // Can be false to block out specific times (e.g. lunch break, leave)
 
@@ -61,11 +63,13 @@ model Appointment {
   doctor        User           @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   startTime     DateTime
   endTime       DateTime
-  status        String         // 'PENDING', 'CONFIRMED', 'CANCELLED', 'MOVED', 'URGENT'
+  status        String // 'PENDING', 'CONFIRMED', 'CANCELLED', 'MOVED', 'URGENT'
   notes         String?        @db.Text
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   notifications Notification[]
+  messages      Message[]
+  Payment       Payment[]
 
   @@index([patientId])
   @@index([doctorId])
@@ -73,15 +77,15 @@ model Appointment {
 
 model CallLog {
   id               Int       @id @default(autoincrement())
-  direction        String    // 'INBOUND', 'OUTBOUND'
+  direction        String // 'INBOUND', 'OUTBOUND'
   phoneNumber      String
-  status           String    // 'COMPLETED', 'MISSED', 'IN_PROGRESS'
+  status           String // 'COMPLETED', 'MISSED', 'IN_PROGRESS'
   startTime        DateTime  @default(now())
   endTime          DateTime?
-  duration         Int?      // in seconds
+  duration         Int? // in seconds
   transcript       String?   @db.Text // JSON or text representing conversation turns
   summary          String?   @db.Text // AI generated summary of the call
-  classification   String?   // 'EMERGENCY', 'APPOINTMENT_BOOKING', 'APPOINTMENT_MODIFICATION', 'INFO_REQUEST', 'ADMINISTRATIVE'
+  classification   String? // 'EMERGENCY', 'APPOINTMENT_BOOKING', 'APPOINTMENT_MODIFICATION', 'INFO_REQUEST', 'ADMINISTRATIVE'
   emergencyHandled Boolean   @default(false) // Pour les urgences : indique si une secrétaire/médecin a traité l'urgence
   language         String    @default("Français")
   patientId        Int?
@@ -95,7 +99,7 @@ model Faq {
   id        Int      @id @default(autoincrement())
   question  String   @db.Text
   answer    String   @db.Text
-  category  String   // 'horaires', 'adresse', 'parking', 'tarifs', 'specialites', 'preparations'
+  category  String // 'horaires', 'adresse', 'parking', 'tarifs', 'specialites', 'preparations'
   createdAt DateTime @default(now())
 }
 
@@ -105,8 +109,8 @@ model Notification {
   appointment    Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
   patientId      Int
   patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  type           String       // 'SMS', 'EMAIL', 'WHATSAPP'
-  status         String       // 'PENDING', 'SENT', 'FAILED'
+  type           String // 'SMS', 'EMAIL', 'WHATSAPP'
+  status         String // 'PENDING', 'SENT', 'FAILED'
   messageContent String       @db.Text
   sentAt         DateTime?
   createdAt      DateTime     @default(now())
@@ -130,3 +134,55 @@ model MedicalDictation {
   @@index([doctorId])
   @@index([patientId])
 }
+
+model Message {
+  id            Int          @id @default(autoincrement())
+  patientId     Int
+  patient       Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointmentId Int?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  channel       String // 'SMS', 'WHATSAPP', 'EMAIL', 'CHAT', 'MESSENGER'
+  type          String       @default("MANUAL") // 'AUTO_REPLY', 'REMINDER', 'NOTIFICATION', 'DOCUMENT', 'MANUAL'
+  content       String       @db.Text
+  status        String       @default("PENDING") // 'PENDING', 'SENT', 'DELIVERED', 'READ', 'FAILED'
+  attachmentUrl String? // URL for document attachments
+  sentAt        DateTime?
+  readAt        DateTime?
+  createdAt     DateTime     @default(now())
+
+  @@index([patientId])
+  @@index([appointmentId])
+  @@index([channel])
+  @@index([status])
+}
+
+model Payment {
+  id             Int          @id @default(autoincrement())
+  patientId      Int
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointmentId  Int?
+  appointment    Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  amount         Decimal      @db.Decimal(10, 2)
+  currency       String       @default("EUR")
+  method         String // 'PAYPAL', 'STRIPE', 'ESPECES', 'CHEQUE', 'VIREMENT'
+  status         String       @default("PENDING") // 'PENDING', 'COMPLETED', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED'
+  type           String       @default("PAYMENT") // 'PAYMENT', 'DEPOSIT' (acompte), 'REFUND'
+  externalId     String? // ID de l'ordre PayPal / payment intent Stripe
+  externalStatus String? // Statut brut renvoyé par le prestataire (ex: 'COMPLETED', 'CREATED')
+  confirmedBy    Int? // Id de la secrétaire qui a confirmé manuellement un paiement espèces/chèque
+  invoiceUrl     String? // URL de la facture PDF générée (Module 1 tâche "Générer les factures PDF")
+  notes          String?      @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([patientId])
+  @@index([appointmentId])
+  @@index([status])
+  @@index([externalId])
+}
+
+// ─── À ajouter sur le modèle Patient existant ──────────────────────────────
+//   payments Payment[]
+
+// ─── À ajouter sur le modèle Appointment existant ──────────────────────────
+//   payments Payment[]
