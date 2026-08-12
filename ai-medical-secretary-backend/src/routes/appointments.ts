@@ -1,6 +1,9 @@
 import { Router, Response } from 'express';
 import prisma from '../config/db';
 import { authenticateJWT, requireRole, AuthenticatedRequest } from '../middlewares/authMiddleware';
+import { upsertGoogleEvent, deleteGoogleEvent } from '../services/googleCalendarService';
+import { upsertOutlookEvent, deleteOutlookEvent } from '../services/outlookCalendarService';
+import { decrypt } from '../utils/encryption';
 
 const router = Router();
 
@@ -126,6 +129,24 @@ router.post('/', async (req, res) => {
 
       return created;
     });
+
+    // Sync with external calendars (non-blocking)
+    const patientName = `${appointment.patient.firstName} ${appointment.patient.lastName}`;
+    const patientPhone = appointment.patient.phone ? decrypt(appointment.patient.phone) : '';
+    const summary = `RDV – ${patientName} (${patientPhone})`;
+    const description = notes || 'Rendez-vous médical';
+    upsertGoogleEvent({
+      summary,
+      description,
+      startDateTime: start.toISOString(),
+      endDateTime: end.toISOString(),
+    }).catch(e => console.error('[GoogleCalendar] Sync failed:', e.message));
+    upsertOutlookEvent({
+      subject: summary,
+      body: description,
+      startDateTime: start.toISOString(),
+      endDateTime: end.toISOString(),
+    }).catch(e => console.error('[Outlook] Sync failed:', e.message));
 
     return res.status(201).json({ message: 'Rendez-vous réservé avec succès', appointment });
   } catch (error: any) {

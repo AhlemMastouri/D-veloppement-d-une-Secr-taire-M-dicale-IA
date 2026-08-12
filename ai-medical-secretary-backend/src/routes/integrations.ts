@@ -1,6 +1,8 @@
 import { Router, Response } from 'express';
 import prisma from '../config/db';
 import { authenticateJWT, requireRole, AuthenticatedRequest } from '../middlewares/authMiddleware';
+import { getAuthUrl, exchangeCode } from '../services/googleCalendarService';
+import { getOutlookAuthUrl, exchangeOutlookCode } from '../services/outlookCalendarService';
 
 const router = Router();
 
@@ -277,6 +279,50 @@ router.get('/audit-logs', authenticateJWT as any, requireRole(['ADMIN', 'SECRETA
     return res.json({ logs, securityStats });
   } catch (error: any) {
     return res.status(500).json({ error: 'Erreur interne du serveur' });
+  }
+});
+
+// ─── Google Calendar OAuth ────────────────────────────────────────────────
+router.get('/google/auth', authenticateJWT as any, requireRole(['ADMIN', 'DOCTOR']) as any, (_req, res: Response) => {
+  try {
+    const url = getAuthUrl();
+    return res.json({ authUrl: url });
+  } catch (e: any) {
+    return res.status(500).json({ error: 'Google OAuth non configuré', detail: e.message });
+  }
+});
+
+router.get('/google/callback', async (req, res: Response) => {
+  try {
+    const { code } = req.query;
+    if (!code) return res.status(400).json({ error: 'code manquant' });
+    const tokens = await exchangeCode(code as string);
+    // In production: store tokens.refresh_token securely per doctor
+    return res.json({ message: 'Google Calendar connecté avec succès', tokens });
+  } catch (e: any) {
+    return res.status(500).json({ error: 'Erreur OAuth Google', detail: e.message });
+  }
+});
+
+// ─── Microsoft Outlook OAuth ──────────────────────────────────────────────
+router.get('/outlook/auth', authenticateJWT as any, requireRole(['ADMIN', 'DOCTOR']) as any, async (_req, res: Response) => {
+  try {
+    const url = await getOutlookAuthUrl();
+    return res.json({ authUrl: url });
+  } catch (e: any) {
+    return res.status(500).json({ error: 'Outlook OAuth non configuré', detail: e.message });
+  }
+});
+
+router.get('/outlook/callback', async (req, res: Response) => {
+  try {
+    const { code } = req.query;
+    if (!code) return res.status(400).json({ error: 'code manquant' });
+    const result = await exchangeOutlookCode(code as string);
+    // In production: store result.refreshToken securely per doctor
+    return res.json({ message: 'Outlook Calendar connecté avec succès', account: result?.account });
+  } catch (e: any) {
+    return res.status(500).json({ error: 'Erreur OAuth Outlook', detail: e.message });
   }
 });
 

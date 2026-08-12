@@ -8,17 +8,19 @@ generator client {
 }
 
 model User {
-  id             Int                  @id @default(autoincrement())
-  email          String               @unique
-  password       String
-  name           String
-  role           String // 'DOCTOR', 'SECRETARY', 'ADMIN'
-  specialty      String? // Optional specialty for doctors
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-  availabilities DoctorAvailability[]
-  appointments   Appointment[]
-  dictations     MedicalDictation[]
+  id               Int                  @id @default(autoincrement())
+  email            String               @unique
+  password         String
+  name             String
+  role             String // 'DOCTOR', 'SECRETARY', 'ADMIN'
+  specialty        String? // Optional specialty for doctors
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  availabilities   DoctorAvailability[]
+  appointments     Appointment[]
+  dictations       MedicalDictation[]
+  leaves           Leave[]
+  specialHours     SpecialHour[]
 }
 
 model Patient {
@@ -26,10 +28,11 @@ model Patient {
   firstName         String
   lastName          String
   dob               DateTime
-  phone             String             @unique
-  email             String?
-  password          String? // Optionnel : certains patients peuvent être créés par le secrétariat sans compte web
-  insurance         String? // 'Carte Vitale', 'Mutuelle', etc.
+  phone             String             // AES-256 encrypted
+  phoneHash         String?            @unique // Deterministic search index (SHA-256 of phone)
+  email             String?            // AES-256 encrypted
+  password          String?
+  insurance         String? // 'Carte Vitale', 'Mutuelle', etc. (AES-256 encrypted)
   treatingPhysician String?
   consentGdpr       Boolean            @default(false)
   createdAt         DateTime           @default(now())
@@ -46,6 +49,10 @@ model DoctorAvailability {
   id           Int       @id @default(autoincrement())
   doctorId     Int
   doctor       User      @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  cabinetId    Int?
+  cabinet      Cabinet?  @relation(fields: [cabinetId], references: [id], onDelete: SetNull)
+  roomId       Int?
+  room         Room?     @relation(fields: [roomId], references: [id], onDelete: SetNull)
   dayOfWeek    Int? // 0 = Sunday, 1 = Monday, ..., 6 = Saturday (for weekly recurring availability)
   startTime    String // "HH:MM" (e.g. "09:00")
   endTime      String // "HH:MM" (e.g. "17:00")
@@ -53,6 +60,8 @@ model DoctorAvailability {
   isAvailable  Boolean   @default(true) // Can be false to block out specific times (e.g. lunch break, leave)
 
   @@index([doctorId])
+  @@index([cabinetId])
+  @@index([roomId])
 }
 
 model Appointment {
@@ -61,6 +70,10 @@ model Appointment {
   patient       Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
   doctorId      Int
   doctor        User           @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  cabinetId     Int?
+  cabinet       Cabinet?       @relation(fields: [cabinetId], references: [id], onDelete: SetNull)
+  roomId        Int?
+  room          Room?          @relation(fields: [roomId], references: [id], onDelete: SetNull)
   startTime     DateTime
   endTime       DateTime
   status        String // 'PENDING', 'CONFIRMED', 'CANCELLED', 'MOVED', 'URGENT'
@@ -73,6 +86,8 @@ model Appointment {
 
   @@index([patientId])
   @@index([doctorId])
+  @@index([cabinetId])
+  @@index([roomId])
 }
 
 model CallLog {
@@ -181,8 +196,58 @@ model Payment {
   @@index([externalId])
 }
 
-// ─── À ajouter sur le modèle Patient existant ──────────────────────────────
-//   payments Payment[]
+model Cabinet {
+  id             Int                  @id @default(autoincrement())
+  name           String
+  address        String
+  phone          String?
+  rooms          Room[]
+  availabilities DoctorAvailability[]
+  appointments   Appointment[]
+  createdAt      DateTime             @default(now())
+}
 
-// ─── À ajouter sur le modèle Appointment existant ──────────────────────────
-//   payments Payment[]
+model Room {
+  id             Int                  @id @default(autoincrement())
+  name           String
+  cabinetId      Int
+  cabinet        Cabinet              @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
+  availabilities DoctorAvailability[]
+  appointments   Appointment[]
+}
+
+model Leave {
+  id        Int      @id @default(autoincrement())
+  doctorId  Int
+  doctor    User     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  startDate DateTime
+  endDate   DateTime
+  reason    String?
+}
+
+model SpecialHour {
+  id           Int      @id @default(autoincrement())
+  doctorId     Int
+  doctor       User     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  date         DateTime
+  startTime    String   // "HH:MM"
+  endTime      String   // "HH:MM"
+  isAvailable  Boolean  @default(true)
+}
+
+model Holiday {
+  id   Int      @id @default(autoincrement())
+  date DateTime @unique
+  name String
+}
+
+model ArchivedAppointment {
+  id            Int      @id
+  patientId     Int
+  doctorId      Int
+  startTime     DateTime
+  endTime       DateTime
+  status        String
+  notes         String?  @db.Text
+  archivedAt    DateTime @default(now())
+}

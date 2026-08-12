@@ -18,6 +18,7 @@ import doctorsRouter from './routes/doctors';
 import messagingRouter from './routes/messaging';
 import integrationsRouter from './routes/integrations';
 import paymentRoutes from './routes/paymentRoutes';
+import agendaRouter from './routes/agenda';
 
 // WebSocket (appels en direct)
 import { attachCallsWebSocketServer } from './wsCallsServer';
@@ -54,6 +55,7 @@ app.use('/api/v1/doctors', doctorsRouter);
 app.use('/api/v1/messaging', messagingRouter);
 app.use('/api/v1/integrations', integrationsRouter);
 app.use('/api/v1/payments', paymentRoutes);
+app.use('/api/v1/agenda', agendaRouter);
 
 // Default root route
 app.get('/', (req, res) => {
