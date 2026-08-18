@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../config/db';
 import { authenticateJWT, requireRole, AuthenticatedRequest } from '../middlewares/authMiddleware';
-
+import { hashForIndex } from '../utils/encryption';
 const router = Router();
 
 // GET /api/v1/calls (Admin, Secretary, Doctor only)
@@ -155,10 +155,12 @@ router.post('/', async (req, res) => {
     }
 
     // Try to auto-link to a patient by phone number if patientId not supplied
+    // NB: le champ indexé est phoneHash (le numéro brut est chiffré, jamais
+    // stocké/interrogé en clair) — voir utils/encryption.ts.
     let resolvedPatientId = patientId ? parseInt(patientId) : null;
     if (!resolvedPatientId) {
       const patient = await prisma.patient.findUnique({
-        where: { phone: phoneNumber },
+        where: { phoneHash: hashForIndex(phoneNumber) },
       });
       if (patient) {
         resolvedPatientId = patient.id;

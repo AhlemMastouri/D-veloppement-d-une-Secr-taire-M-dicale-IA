@@ -8,6 +8,7 @@
 
 import { WebSocket } from "ws";
 import prisma from "../../config/db";
+import { hashForIndex } from "../../utils/encryption";
 import { createStreamingRecognition } from "./sttService";
 import { synthesizeSpeech, encodeAudioForTwilio } from "./ttsService";
 import { detectLanguage, resolveLanguageSwitch } from "./languageDetector";
@@ -56,8 +57,12 @@ export function handleTwilioMediaStream(ws: WebSocket) {
 
         // Tentative de résolution du patient par numéro de téléphone,
         // pour afficher son nom dans le dashboard de supervision.
+        // NB: le champ indexé est phoneHash (le numéro brut est chiffré,
+        // jamais stocké/interrogé en clair) — voir utils/encryption.ts.
         const patient = callerPhone
-          ? await prisma.patient.findUnique({ where: { phone: callerPhone } })
+          ? await prisma.patient.findUnique({
+              where: { phoneHash: hashForIndex(callerPhone) },
+            })
           : null;
 
         session = {

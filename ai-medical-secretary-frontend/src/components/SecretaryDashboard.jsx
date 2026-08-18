@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   PhoneCall, Phone, PhoneIncoming, Radio, Send, LogOut as HandOff,
   Edit3, Save, X, AlertTriangle, ShieldAlert, User, Clock, CheckCircle,
-  MessageSquare, Siren
+  MessageSquare, Siren, ClipboardList
 } from 'lucide-react';
+import TasksTab from './TasksTab';
 
 // ─── Convention WebSocket attendue par ce composant (à adapter à ton backend) ───
 // Connexion : ws://localhost:3001/ws/calls?token=<JWT>
@@ -23,6 +24,7 @@ import {
 const WS_URL = (token) => `ws://localhost:3001/ws/calls?token=${encodeURIComponent(token)}`;
 
 export default function SecretaryDashboard({ token }) {
+  const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
   const [activeTab, setActiveTab] = useState('conversations');
   const [error, setError] = useState('');
 
@@ -271,6 +273,7 @@ export default function SecretaryDashboard({ token }) {
           { id: 'live', label: 'Appels en direct', icon: <PhoneIncoming size={16} />, badge: liveCalls.length },
           { id: 'corrections', label: 'Corriger les réponses IA', icon: <Edit3 size={16} /> },
           { id: 'emergencies', label: 'Urgences', icon: <Siren size={16} />, badge: emergencyLogs.filter(l => !l.emergencyHandled).length },
+          { id: 'tasks', label: 'Mes tâches', icon: <ClipboardList size={16} /> },
         ].map(tab => (
           <button
             key={tab.id}
@@ -642,6 +645,11 @@ export default function SecretaryDashboard({ token }) {
             </div>
           )}
         </div>
+      )}
+
+      {/* ─── MES TÂCHES (indépendantes — visibles uniquement par Secrétaire) ─── */}
+      {activeTab === 'tasks' && (
+        <TasksTab token={token} role="SECRETARY" currentUser={currentUser} />
       )}
     </div>
   );

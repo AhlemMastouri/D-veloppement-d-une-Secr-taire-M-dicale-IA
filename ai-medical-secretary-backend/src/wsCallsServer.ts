@@ -1,4 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
+import type { IncomingMessage } from 'http';
 import { Server as HttpServer } from 'http';
 import { URL } from 'url';
 import jwt from 'jsonwebtoken';
@@ -102,7 +103,7 @@ export function attachCallsWebSocketServer(server: HttpServer) {
     });
   });
 
-  wss.on('connection', (ws: WebSocket, _req, user: AuthenticatedUser) => {
+  wss.on('connection', (ws: WebSocket, _req: IncomingMessage, user: AuthenticatedUser) => {
     const clientInfo: ClientInfo = { ws, user };
     clients.add(clientInfo);
 
@@ -205,3 +206,5 @@ export function notifyCallEnded(callId: string) {
   liveCalls.delete(callId);
   broadcast({ type: 'call_ended', callId });
 }
+
+

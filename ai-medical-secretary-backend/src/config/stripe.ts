@@ -17,10 +17,10 @@ if (!STRIPE_SECRET_KEY) {
 // Le SDK Stripe exige une chaîne non vide au constructeur, sinon il lève une exception
 // qui ferait planter tout le process au démarrage (et pas seulement les routes Stripe).
 // On utilise donc une clé factice en son absence : le serveur démarre normalement,
-// et seuls les appels réels à l'API Stripe échoueront (avec une erreur d'authentification
+// et seuls les'API Stripe échoueront (avec une erreur d'authentification
 // claire), sans jamais bloquer PayPal, Cabinet ou le reste de l'application.
 const stripeClient = new Stripe(STRIPE_SECRET_KEY || 'sk_test_missing_key_placeholder', {
-  apiVersion: '2024-06-20',
+  apiVersion: '2026-07-29.dahlia',
 });
 
 export const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';

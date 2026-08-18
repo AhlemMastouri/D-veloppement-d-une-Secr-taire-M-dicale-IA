@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import {
   Users, UserPlus, Trash2, Edit3, Shield, Stethoscope, UserCheck,
   BarChart3, Settings2, Save, AlertTriangle, X, Search, Building2,
-  Clock, Bell, TrendingUp, PhoneCall, Calendar as CalendarIcon
+  Clock, Bell, TrendingUp, PhoneCall, Calendar as CalendarIcon, ClipboardList
 } from 'lucide-react';
+import TasksTab from './TasksTab';
 
 const ROLES = [
   { val: 'DOCTOR', label: 'Médecin', icon: <Stethoscope size={14} /> },
@@ -24,6 +25,7 @@ const EMPTY_USER_FORM = {
 const DAYS_FR = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
 export default function AdminDashboard({ token }) {
+  const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
   const [activeTab, setActiveTab] = useState('users');
   const [error, setError] = useState('');
 
@@ -292,6 +294,7 @@ export default function AdminDashboard({ token }) {
       <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-color)', marginBottom: '24px', flexWrap: 'wrap' }}>
         {[
           { id: 'users', label: 'Gestion des utilisateurs', icon: <Users size={16} /> },
+          { id: 'tasks', label: 'Mes tâches', icon: <ClipboardList size={16} /> },
           { id: 'reports', label: 'Rapports', icon: <BarChart3 size={16} /> },
           { id: 'config', label: 'Configuration générale', icon: <Settings2 size={16} /> },
         ].map(tab => (
@@ -424,6 +427,11 @@ export default function AdminDashboard({ token }) {
             )}
           </div>
         </div>
+      )}
+
+      {/* ─── MES TÂCHES (indépendantes — visibles uniquement par Admin) ─── */}
+      {activeTab === 'tasks' && (
+        <TasksTab token={token} role="ADMIN" currentUser={currentUser} />
       )}
 
       {/* ─── RAPPORTS ─── */}
